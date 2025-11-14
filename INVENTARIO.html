@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Inventario — Merca Cuántica</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--muted:#9aa4b2;--accent:#7dd3fc;--success:#86efac}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:linear-gradient(180deg,#071029 0%, #071a2b 100%);color:#e6eef6}
+    .container{max-width:1000px;margin:32px auto;padding:20px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    h1{margin:0;font-size:20px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.03);padding:14px;border-radius:10px;box-shadow:0 6px 18px rgba(2,6,23,0.6)}
+    form{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    input,select,textarea,button{background:transparent;border:1px solid rgba(255,255,255,0.06);color:inherit;padding:8px 10px;border-radius:8px;outline:none}
+    input::placeholder,textarea::placeholder{color:var(--muted)}
+    input[type=number]{width:88px}
+    textarea{min-height:40px;resize:vertical}
+    .btn{cursor:pointer}
+    .btn.primary{background:var(--accent);color:#041322;border:none}
+    .btn.ghost{background:transparent;border:1px dashed rgba(255,255,255,0.04)}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{padding:10px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.03);vertical-align:top}
+    th{font-size:13px;color:var(--muted)}
+    .small{font-size:13px;color:var(--muted)}
+    .actions button{margin-right:6px}
+    .badge{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px}
+    .taken{background:rgba(34,197,94,0.12);color:var(--success);border:1px solid rgba(34,197,94,0.15)}
+    .pill{background:rgba(125,211,252,0.06);border:1px solid rgba(125,211,252,0.08);padding:6px 8px;border-radius:8px}
+    .top-controls{display:flex;gap:8px;align-items:center}
+    .flex{display:flex;gap:8px}
+    .muted{color:var(--muted)}
+    .nowrap{white-space:nowrap}
+    .comment{font-size:13px;color:var(--muted);margin-top:6px}
+    .empty{padding:28px;text-align:center;color:var(--muted)}
+    footer{margin-top:14px;color:var(--muted);font-size:13px}
+    @media(max-width:820px){table thead{display:none}table,tbody,th,td,tr{display:block;width:100%}td{border:none;padding:8px 0}td:before{content:attr(data-label);font-weight:600;display:inline-block;width:120px;color:var(--muted)}
+    form{flex-direction:column}input[type=number]{width:100%}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>Inventario — <span class="pill">Merca Cuántica</span></h1>
+        <div class="small muted">Administra entradas, salidas, comentarios y guarda automáticamente en tu navegador.</div>
+      </div>
+      <div class="top-controls">
+        <input id="buscar" placeholder="Buscar por nombre, comentario o persona..." />
+        <button class="btn ghost" id="exportBtn" title="Exportar JSON">Exportar</button>
+        <button class="btn ghost" id="importBtn" title="Importar JSON">Importar</button>
+        <input type="file" id="fileInput" accept="application/json" style="display:none" />
+      </div>
+    </header>
+
+    <section class="card">
+      <form id="addForm">
+        <input id="nombre" placeholder="Nombre del producto (ej. Galletas)" required />
+        <input id="cantidad" type="number" placeholder="Cant." min="1" value="1" required />
+        <input id="ubicacion" placeholder="Ubicación (ej. almacén A)" />
+        <input id="persona" placeholder="Persona (ej. Christian)" />
+        <textarea id="comentario" placeholder="Comentario opcional (ej. Se lo llevó Christian)"></textarea>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn primary" type="submit">Agregar / Actualizar</button>
+          <button class="btn" type="button" id="limpiarBtn">Limpiar form</button>
+        </div>
+      </form>
+
+      <div id="listaWrap">
+        <table id="lista">
+          <thead>
+            <tr>
+              <th>Entregado</th>
+              <th>Nombre</th>
+              <th>Cant.</th>
+              <th>Ubicación</th>
+              <th>Persona / Nota</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div id="emptyState" class="empty" style="display:none">Aún no tienes productos. Agrega algo arriba.</div>
+      </div>
+
+      <footer>
+        Guarda local: <span class="nowrap">localStorage → <code>merca_cuantica_inventario</code></span>
+      </footer>
+    </section>
+  </div>
+
+  <script>
+    // Llave en localStorage
+    const STORAGE_KEY = 'merca_cuantica_inventario_v1';
+
+    // Estado en memoria
+    let inventario = [];
+    let editId = null;
+
+    // Elementos
+    const listaTbody = document.querySelector('#lista tbody');
+    const emptyState = document.getElementById('emptyState');
+    const addForm = document.getElementById('addForm');
+    const nombreIn = document.getElementById('nombre');
+    const cantidadIn = document.getElementById('cantidad');
+    const ubicacionIn = document.getElementById('ubicacion');
+    const personaIn = document.getElementById('persona');
+    const comentarioIn = document.getElementById('comentario');
+    const limpiarBtn = document.getElementById('limpiarBtn');
+    const buscar = document.getElementById('buscar');
+    const exportBtn = document.getElementById('exportBtn');
+    const importBtn = document.getElementById('importBtn');
+    const fileInput = document.getElementById('fileInput');
+
+    // Init
+    function init(){
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        try{ inventario = JSON.parse(raw) || [] } catch(e){ inventario = [] }
+      } else {
+        inventario = [];
+      }
+      render();
+    }
+
+    // Guardar
+    function save(){
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(inventario));
+    }
+
+    // Render
+    function render(filterText = ''){
+      listaTbody.innerHTML = '';
+      const f = filterText.trim().toLowerCase();
+      const items = inventario.filter(it => {
+        if(!f) return true;
+        return (it.nombre||'').toLowerCase().includes(f) || (it.comentario||'').toLowerCase().includes(f) || (it.persona||'').toLowerCase().includes(f);
+      });
+
+      if(items.length === 0){
+        document.getElementById('lista').style.display='none';
+        emptyState.style.display='block';
+        return;
+      } else {
+        document.getElementById('lista').style.display='table';
+        emptyState.style.display='none';
+      }
+
+      for(const it of items){
+        const tr = document.createElement('tr');
+        // Entregado checkbox
+        const tdCheck = document.createElement('td');
+        const chk = document.createElement('input'); chk.type='checkbox'; chk.checked = !!it.entregado;
+        chk.addEventListener('change', ()=>{
+          it.entregado = chk.checked;
+          it.persona = it.persona || '';
+          it.comentario = it.comentario || '';
+          it.ultimaAccion = { tipo: it.entregado ? 'entregado' : 'devuelto', fecha: new Date().toISOString() };
+          save(); render(buscar.value);
+        });
+        tdCheck.appendChild(chk);
+
+        // Nombre
+        const tdNombre = document.createElement('td'); tdNombre.textContent = it.nombre || '-'; tdNombre.setAttribute('data-label','Nombre');
+        // Cantidad
+        const tdCant = document.createElement('td'); tdCant.textContent = it.cantidad; tdCant.setAttribute('data-label','Cant.');
+        // Ubicación
+        const tdUbi = document.createElement('td'); tdUbi.textContent = it.ubicacion || '-'; tdUbi.setAttribute('data-label','Ubicación');
+        // Persona / comentario
+        const tdPersona = document.createElement('td'); tdPersona.setAttribute('data-label','Persona / Nota');
+        const p = document.createElement('div'); p.innerHTML = `<strong>${it.persona||'-'}</strong>`;
+        const com = document.createElement('div'); com.className='comment'; com.textContent = it.comentario||'';
+        tdPersona.appendChild(p); tdPersona.appendChild(com);
+
+        // Acciones
+        const tdAcc = document.createElement('td'); tdAcc.className='actions'; tdAcc.setAttribute('data-label','Acciones');
+        const editBtn = document.createElement('button'); editBtn.className='btn'; editBtn.textContent='Editar';
+        const delBtn = document.createElement('button'); delBtn.className='btn'; delBtn.textContent='Borrar';
+        const quickNote = document.createElement('button'); quickNote.className='btn'; quickNote.textContent='Nota rápida';
+
+        editBtn.addEventListener('click', ()=>{
+          editId = it.id;
+          nombreIn.value = it.nombre || '';
+          cantidadIn.value = it.cantidad || 1;
+          ubicacionIn.value = it.ubicacion || '';
+          personaIn.value = it.persona || '';
+          comentarioIn.value = it.comentario || '';
+          window.scrollTo({top:0,behavior:'smooth'});
+        });
+
+        delBtn.addEventListener('click', ()=>{
+          if(!confirm(`¿Eliminar "${it.nombre}"? Esta acción no se puede deshacer.`)) return;
+          inventario = inventario.filter(x=>x.id !== it.id);
+          save(); render(buscar.value);
+        });
+
+        quickNote.addEventListener('click', ()=>{
+          const who = prompt('¿Quién se lo llevó? (ej: Christian)');
+          if(!who) return;
+          const note = prompt('Comentario (opcional)', `Se lo llevó ${who}`) || '';
+          it.persona = who;
+          it.comentario = note;
+          it.entregado = true;
+          it.ultimaAccion = { tipo:'entregado', fecha:new Date().toISOString() };
+          save(); render(buscar.value);
+        });
+
+        tdAcc.appendChild(editBtn); tdAcc.appendChild(delBtn); tdAcc.appendChild(quickNote);
+
+        // Row style if entregado
+        if(it.entregado){
+          tr.classList.add('taken');
+        }
+
+        tr.appendChild(tdCheck);
+        tr.appendChild(tdNombre);
+        tr.appendChild(tdCant);
+        tr.appendChild(tdUbi);
+        tr.appendChild(tdPersona);
+        tr.appendChild(tdAcc);
+
+        listaTbody.appendChild(tr);
+      }
+    }
+
+    // Add or update
+    addForm.addEventListener('submit', (e)=>{
+      e.preventDefault();
+      const nombre = nombreIn.value.trim();
+      if(!nombre) return alert('Escribe un nombre');
+      const cantidad = Math.max(1, parseInt(cantidadIn.value) || 1);
+      const ubicacion = ubicacionIn.value.trim();
+      const persona = personaIn.value.trim();
+      const comentario = comentarioIn.value.trim();
+
+      if(editId){
+        const it = inventario.find(x=>x.id===editId);
+        if(it){ it.nombre=nombre; it.cantidad=cantidad; it.ubicacion=ubicacion; it.persona=persona; it.comentario=comentario; it.updated=new Date().toISOString(); }
+        editId = null;
+      } else {
+        const nuevo = { id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(), nombre, cantidad, ubicacion, persona, comentario, creado: new Date().toISOString(), entregado:false };
+        inventario.unshift(nuevo);
+      }
+      addForm.reset();
+      save(); render(buscar.value);
+    });
+
+    limpiarBtn.addEventListener('click', ()=>{ addForm.reset(); editId = null; });
+
+    // Buscar
+    buscar.addEventListener('input', ()=> render(buscar.value));
+
+    // Exportar
+    exportBtn.addEventListener('click', ()=>{
+      const dataStr = JSON.stringify(inventario, null, 2);
+      const blob = new Blob([dataStr], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download = 'inventario_merca_cuantica.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    });
+
+    // Importar
+    importBtn.addEventListener('click', ()=> fileInput.click());
+    fileInput.addEventListener('change', (ev)=>{
+      const f = ev.target.files && ev.target.files[0];
+      if(!f) return;
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        try{
+          const parsed = JSON.parse(reader.result);
+          if(!Array.isArray(parsed)) throw new Error('Formato inesperado');
+          // opcional: merge (aquí se hace merge por id evitando duplicados)
+          for(const it of parsed){
+            if(!it.id) it.id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString();
+            const exists = inventario.find(x=>x.id===it.id);
+            if(!exists) inventario.push(it); else Object.assign(exists, it);
+          }
+          save(); render(buscar.value);
+          alert('Importación completada. Se han mezclado los registros.');
+        }catch(e){ alert('Archivo inválido: '+ e.message) }
+      };
+      reader.readAsText(f);
+      fileInput.value = '';
+    });
+
+    // Init app
+    init();
+  </script>
+</body>
+</html>
